@@ -1,4 +1,5 @@
 from serial import Serial
+from serial.tools.list_ports import comports
 from pynmeagps import NMEAReader
 from dataclasses import dataclass
 from nexstar import NexstarHandController, NexstarModel
@@ -7,6 +8,40 @@ from timezonefinder import TimezoneFinder
 
 import datetime
 import pytz
+import re
+
+
+@dataclass
+class PortIDs:
+    gps: str
+    telescope: str
+
+
+def identify_ports() -> PortIDs:
+    GPS_ID = ("1546", "01A7")
+    NEXSTAR_ID = ("067B", "23D3")
+
+    ports_by_id = {}
+    ports = comports()
+    for port, desc, hwid in sorted(ports):
+        re_match = re.search(
+            "VID:PID=([0-9A-F]{4}):([0-9A-F]{4})\\b", hwid, re.IGNORECASE
+        )
+        if not re_match:
+            print(f"Failed to match USB VendorID: {hwid=}")
+            continue
+        vendor_id = re_match.group(1)
+        product_id = re_match.group(2)
+        print(f"{port}: {vendor_id=}, {product_id=}")
+        ports_by_id[(vendor_id, product_id)] = port
+
+    if GPS_ID not in ports_by_id:
+        raise Exception('Could not find the USB GPS device.')
+
+    if NEXSTAR_ID not in ports_by_id:
+        raise Exception('Could not find the USB NexStar telescope device.')
+
+    return PortIDs(gps=ports_by_id[GPS_ID], telescope=ports_by_id[NEXSTAR_ID])
 
 
 @dataclass
@@ -69,11 +104,11 @@ def wait_for_fix(nmr: NMEAReader, hdop: int = 3) -> Optional[Fix]:
             return None
 
 
-def set_telescope_from_gps():
+def set_telescope_from_gps(ports: PortIDs):
     tf = TimezoneFinder()
     tz_utc = pytz.timezone("UTC")
 
-    with Serial("COM4") as nmea_serial, Serial("COM3") as nexstar_serial:
+    with Serial(ports.gps) as nmea_serial, Serial(ports.telescope) as nexstar_serial:
         # Create a controller and try to ping the telescope.
         controller = NexstarHandController(nexstar_serial)
         try:
@@ -123,4 +158,6 @@ def set_telescope_from_gps():
 
 
 if __name__ == "__main__":
-    set_telescope_from_gps()
+    ports = identify_ports()
+    print(ports)
+    set_telescope_from_gps(ports)
