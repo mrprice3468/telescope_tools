@@ -1,0 +1,5 @@
+nexstar==0.0.5
+pynmeagps==1.0.32
+pyserial==3.5
+pytz==2023.3.post1
+timezonefinder==6.2.0
